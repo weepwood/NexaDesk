@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: dotnet restore .\NexaDesk.sln -p:Platform=x64
+
+      - name: Build native application
+        run: >
+          msbuild .\NexaDesk.sln
+          /m
+          /p:Configuration=Release
+          /p:Platform=x64
+          /p:WindowsPackageType=None
+          /p:AppxPackageSigningEnabled=false
+          /bl:artifacts\ci.binlog
+
+      - name: Publish framework-dependent portable build
+        shell: pwsh
+        run: |
+          dotnet publish .\src\NexaDesk\NexaDesk.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -p:Platform=x64 `
+            -p:WindowsPackageType=None `
+            -p:WindowsAppSDKSelfContained=false `
+            -p:PublishReadyToRun=true `
+            -o .\artifacts\portable-framework
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexaDesk-ci-x64
+          path: |
+            artifacts/portable-framework/**
+            artifacts/ci.binlog
+          if-no-files-found: error
+          retention-days: 7

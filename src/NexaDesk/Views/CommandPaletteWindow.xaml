@@ -1,0 +1,56 @@
+<Window
+    x:Class="NexaDesk.Views.CommandPaletteWindow"
+    x:Name="RootWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Padding="14" CornerRadius="14" Background="{ThemeResource NexaCardBrush}">
+        <Grid RowSpacing="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBox x:Name="QueryBox" FontSize="18"
+                     PlaceholderText="输入应用、动作或工作流"
+                     TextChanged="OnQueryChanged"
+                     KeyDown="OnQueryKeyDown" />
+
+            <ListView x:Name="ResultsList" Grid.Row="1"
+                      ItemsSource="{Binding Results}"
+                      SelectionMode="Single"
+                      IsItemClickEnabled="True"
+                      ItemClick="OnResultClicked">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="4,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="{Binding IconGlyph}" FontSize="21" />
+                            <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Description}" FontSize="12"
+                                           Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="{Binding Category}"
+                                       Opacity="0.6" VerticalAlignment="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding StatusMessage}" Opacity="0.65" FontSize="12" />
+                <TextBlock Grid.Column="1" Text="Enter 运行 · Esc 关闭"
+                           Opacity="0.65" FontSize="12" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
