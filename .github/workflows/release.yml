@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
+    branches:
+      - "release/v*.*.*"
   workflow_dispatch:
     inputs:
       version:
@@ -42,7 +44,12 @@ jobs:
         run: |
           $inputVersion = "${{ inputs.version }}"
           if ([string]::IsNullOrWhiteSpace($inputVersion)) {
-            $inputVersion = "${{ github.ref_name }}".TrimStart("v")
+            $refName = "${{ github.ref_name }}"
+            if ($refName.StartsWith("release/v")) {
+              $inputVersion = $refName.Substring("release/v".Length)
+            } else {
+              $inputVersion = $refName.TrimStart("v")
+            }
           }
           if ($inputVersion -notmatch '^\d+\.\d+\.\d+$') {
             throw "Version must use major.minor.patch format."
@@ -51,21 +58,25 @@ jobs:
           "package=$inputVersion.0" >> $env:GITHUB_OUTPUT
           "tag=v$inputVersion" >> $env:GITHUB_OUTPUT
 
-      - name: Validate signing secrets
+      - name: Detect signing configuration
+        id: signing
         shell: pwsh
         run: |
-          $missing = @()
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) { $missing += "WINDOWS_CERTIFICATE" }
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) { $missing += "WINDOWS_CERTIFICATE_PASSWORD" }
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PUBLISHER)) { $missing += "WINDOWS_CERTIFICATE_PUBLISHER" }
-          if ($missing.Count -gt 0) {
-            throw "Missing repository secrets: $($missing -join ', ')"
+          $available = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -and
+                       -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD) -and
+                       -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PUBLISHER)
+          "available=$($available.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($available) {
+            "Windows signing secrets detected. The signed MSIX and App Installer will be produced." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            "Windows signing secrets are not configured. Portable packages will be published; signed MSIX/App Installer assets are skipped." >> $env:GITHUB_STEP_SUMMARY
           }
 
       - name: Restore
         run: dotnet restore .\NexaDesk.sln -p:Platform=x64
 
       - name: Prepare certificate and identity
+        if: steps.signing.outputs.available == 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path .\.local\certificates -Force | Out-Null
@@ -104,6 +115,7 @@ jobs:
             -DestinationPath .\artifacts\NexaDesk-portable-x64-selfcontained.zip -Force
 
       - name: Build signed self-contained MSIX
+        if: steps.signing.outputs.available == 'true'
         shell: pwsh
         run: |
           $pfx = (Resolve-Path .\.local\certificates\release.pfx).Path
@@ -133,6 +145,7 @@ jobs:
           Copy-Item $msix.FullName .\artifacts\NexaDesk-x64.msix -Force
 
       - name: Create App Installer manifest
+        if: steps.signing.outputs.available == 'true'
         shell: pwsh
         run: |
           .\scripts\New-AppInstaller.ps1 `
@@ -154,22 +167,49 @@ jobs:
             $lines,
             (New-Object Text.UTF8Encoding($false)))
 
+      - name: Create release notes
+        shell: pwsh
+        run: |
+          $signed = "${{ steps.signing.outputs.available }}" -eq "true"
+          $lines = @(
+            "NexaDesk ${{ steps.version.outputs.semver }} is the first native Windows release.",
+            "",
+            "Included assets:",
+            "- Framework-dependent portable x64 build",
+            "- Self-contained portable x64 build",
+            "- SHA-256 checksums"
+          )
+          if ($signed) {
+            $lines += "- Signed self-contained MSIX installer"
+            $lines += "- App Installer automatic-update manifest"
+          } else {
+            $lines += ""
+            $lines += "> Signed MSIX and App Installer assets were not generated because repository signing secrets are not configured."
+          }
+          [IO.File]::WriteAllLines(
+            (Join-Path (Resolve-Path .\artifacts) "RELEASE_NOTES.md"),
+            $lines,
+            (New-Object Text.UTF8Encoding($false)))
+
       - name: Publish GitHub Release
         shell: pwsh
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
-          $assets = @(
-            ".\artifacts\NexaDesk-x64.msix",
-            ".\artifacts\NexaDesk.appinstaller",
-            ".\artifacts\NexaDesk-portable-x64-framework.zip",
-            ".\artifacts\NexaDesk-portable-x64-selfcontained.zip",
-            ".\artifacts\SHA256SUMS.txt"
-          )
+          $assets = Get-ChildItem .\artifacts -File |
+            Where-Object { $_.Name -match '^NexaDesk.*\.(msix|appinstaller|zip)$' -or $_.Name -eq 'SHA256SUMS.txt' } |
+            ForEach-Object FullName
+          if (-not $assets -or $assets.Count -eq 0) {
+            throw "No release assets were produced."
+          }
+
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag @assets --clobber
+            gh release edit $tag --notes-file .\artifacts\RELEASE_NOTES.md --title "NexaDesk ${{ steps.version.outputs.semver }}"
           } else {
-            gh release create $tag @assets --generate-notes `
+            gh release create $tag @assets `
+              --target "${{ github.sha }}" `
+              --notes-file .\artifacts\RELEASE_NOTES.md `
               --title "NexaDesk ${{ steps.version.outputs.semver }}"
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publishing failed." }
