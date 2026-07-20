@@ -31,6 +31,26 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Verify portable XAML resource independence
+        shell: pwsh
+        run: |
+          $forbidden = @(
+            '<XamlControlsResources',
+            '<NavigationView',
+            '<TabView',
+            'ms-appx:///Microsoft.UI.Xaml/Themes/'
+          )
+          $sourceFiles = Get-ChildItem .\src\NexaDesk -Recurse -File |
+            Where-Object Extension -In '.xaml', '.cs'
+
+          foreach ($pattern in $forbidden) {
+            $matches = $sourceFiles | Select-String -SimpleMatch $pattern
+            if ($matches) {
+              $matches | ForEach-Object { Write-Error "$($_.Path):$($_.LineNumber): $($_.Line)" }
+              throw "Portable UI contains forbidden external WinUI resource dependency: $pattern"
+            }
+          }
+
       - name: Restore
         run: dotnet restore .\NexaDesk.sln -p:Platform=x64
 
@@ -84,6 +104,8 @@ jobs:
             "NexaDesk.dll",
             "NexaDesk.pri",
             "Microsoft.WinUI.dll",
+            "Microsoft.UI.pri",
+            "Microsoft.UI.Xaml.Controls.pri",
             "WinRT.Runtime.dll"
           )
           foreach ($name in $required) {
@@ -98,13 +120,9 @@ jobs:
             throw "Self-contained output is missing Windows App SDK runtime DLLs."
           }
 
-      - name: Collect hosted-runner startup diagnostics
-        continue-on-error: true
+      - name: Verify self-contained startup
         shell: pwsh
         run: |
-          # GitHub-hosted runners do not provide a normal interactive desktop.
-          # This step detects immediate crashes and collects stage logs. Real
-          # visibility is verified by the app's own watchdog on desktop Windows.
           $root = Join-Path $env:LOCALAPPDATA "NexaDesk"
           $probe = Join-Path $root "startup-probe.txt"
           $log = Join-Path $root "logs\nexadesk.log"
@@ -125,20 +143,30 @@ jobs:
               throw "NexaDesk exited during startup. Exit code: $($process.ExitCode)"
             }
 
-            if (Test-Path $probe) {
-              Copy-Item $probe (Join-Path $diagnostics "startup-probe.txt") -Force
-              Get-Content $probe
+            if (-not (Test-Path $probe)) {
+              throw "NexaDesk did not produce a startup visibility probe."
+            }
+
+            $probeText = Get-Content $probe -Raw
+            Copy-Item $probe (Join-Path $diagnostics "startup-probe.txt") -Force
+            Write-Host $probeText
+            if ($probeText -notmatch 'visible=true') {
+              throw "NexaDesk did not report a visible native window."
+            }
+
+            foreach ($source in @($bootstrapLog, $log)) {
+              if (Test-Path $source) {
+                $text = Get-Content $source -Raw
+                Copy-Item $source $diagnostics -Force
+                Write-Host "---- $source ----"
+                Write-Host $text
+                if ($text -match 'XamlParseException|Cannot locate resource') {
+                  throw "NexaDesk startup log contains a XAML resource failure."
+                }
+              }
             }
           }
           finally {
-            foreach ($source in @($bootstrapLog, $log)) {
-              if (Test-Path $source) {
-                Copy-Item $source $diagnostics -Force
-                Write-Host "---- $source ----"
-                Get-Content $source
-              }
-            }
-
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id -Force
             }
