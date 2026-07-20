@@ -17,7 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -57,12 +57,72 @@ jobs:
             -p:PublishReadyToRun=true `
             -o .\artifacts\portable-framework
 
+      - name: Publish self-contained startup smoke build
+        shell: pwsh
+        run: |
+          dotnet publish .\src\NexaDesk\NexaDesk.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Platform=x64 `
+            -p:WindowsPackageType=None `
+            -p:WindowsAppSDKSelfContained=true `
+            -p:PublishReadyToRun=true `
+            -o .\artifacts\portable-selfcontained
+
+      - name: Verify application creates a visible window
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path .\artifacts\portable-selfcontained\NexaDesk.exe).Path
+          $process = Start-Process -FilePath $exe -PassThru
+          $deadline = (Get-Date).AddSeconds(30)
+          $visibleWindowFound = $false
+
+          try {
+            do {
+              Start-Sleep -Seconds 1
+              $process.Refresh()
+
+              if ($process.HasExited) {
+                $log = Join-Path $env:LOCALAPPDATA "NexaDesk\logs\nexadesk.log"
+                if (Test-Path $log) {
+                  Write-Host "---- NexaDesk startup log ----"
+                  Get-Content $log
+                }
+                throw "NexaDesk exited before creating a window. Exit code: $($process.ExitCode)"
+              }
+
+              if ($process.MainWindowHandle -ne 0) {
+                $visibleWindowFound = $true
+                Write-Host "Visible NexaDesk window detected: $($process.MainWindowHandle)"
+                break
+              }
+            } while ((Get-Date) -lt $deadline)
+
+            if (-not $visibleWindowFound) {
+              $log = Join-Path $env:LOCALAPPDATA "NexaDesk\logs\nexadesk.log"
+              if (Test-Path $log) {
+                Write-Host "---- NexaDesk startup log ----"
+                Get-Content $log
+              }
+              throw "NexaDesk remained alive but did not create a visible top-level window within 30 seconds."
+            }
+          }
+          finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
+
       - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: NexaDesk-ci-x64
           path: |
             artifacts/portable-framework/**
+            artifacts/portable-selfcontained/**
             artifacts/ci.binlog
-          if-no-files-found: error
+            ~/AppData/Local/NexaDesk/logs/**
+          if-no-files-found: warn
           retention-days: 7
