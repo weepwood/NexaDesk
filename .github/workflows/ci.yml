@@ -156,7 +156,6 @@ jobs:
             }
 
             $probeText = Get-Content $probe -Raw
-            Copy-Item $probe (Join-Path $diagnostics "startup-probe.txt") -Force
             Write-Host $probeText
             if ($probeText -notmatch 'visible=true') {
               throw "NexaDesk did not report a visible native window."
@@ -165,7 +164,6 @@ jobs:
             foreach ($source in @($bootstrapLog, $log)) {
               if (Test-Path $source) {
                 $text = Get-Content $source -Raw
-                Copy-Item $source $diagnostics -Force
                 Write-Host "---- $source ----"
                 Write-Host $text
                 if ($text -match 'XamlParseException|Cannot locate resource') {
@@ -175,6 +173,12 @@ jobs:
             }
           }
           finally {
+            foreach ($source in @($probe, $bootstrapLog, $log)) {
+              if (Test-Path $source) {
+                Copy-Item $source $diagnostics -Force
+              }
+            }
+
             if (-not $process.HasExited) {
               Stop-Process -Id $process.Id -Force
             }
