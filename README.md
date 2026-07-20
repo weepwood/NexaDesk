@@ -4,6 +4,21 @@ NexaDesk is a native, local-first Windows action launcher and workflow center.
 Press `Ctrl + Alt + Space`, search for an application or Windows action, and
 execute it without opening multiple menus.
 
+## Download
+
+For a normal portable installation, download the **self-contained** package:
+
+```text
+NexaDesk-portable-x64-selfcontained.zip
+```
+
+It includes the required .NET and Windows App SDK runtime files. Extract the
+entire archive before running `NexaDesk.exe`; do not run the executable from
+inside the ZIP preview.
+
+The `NexaDesk-portable-x64-framework.zip` package is intended for machines that
+already have the matching .NET and Windows App Runtime installed.
+
 ## Implemented
 
 - WinUI 3 Fluent interface
@@ -23,6 +38,21 @@ No application data is sent to a backend. Runtime data is stored under:
 ```text
 %LocalAppData%\NexaDesk
 ```
+
+## Startup troubleshooting
+
+NexaDesk 0.1.1 and later display a startup page before local services are
+initialized. Optional integrations such as Mica, the tray icon, and the global
+hotkey cannot prevent the main window from opening.
+
+If startup still fails, inspect:
+
+```text
+%LocalAppData%\NexaDesk\logs\nexadesk.log
+```
+
+The log records the window creation, activation, positioning, local database,
+and shell-integration stages.
 
 ## Technology
 
