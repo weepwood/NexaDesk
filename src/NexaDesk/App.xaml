@@ -1,15 +1,20 @@
 <Application
     x:Class="NexaDesk.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls">
     <Application.Resources>
         <ResourceDictionary>
             <!--
-              Keep portable builds independent from framework package resource URIs.
-              Do not merge XamlControlsResources here: in a clean unpackaged runtime
-              it attempts to resolve Microsoft.UI.Xaml/Themes/themeresources.xaml
-              through ms-appx and prevents the first window from being created.
+              WinUI control templates require XamlControlsResources. The custom
+              Program.Main must call XamlCheckProcessRequirements before App is
+              constructed so this dictionary can resolve its theme PRI assets in
+              unpackaged, self-contained deployments.
             -->
+            <ResourceDictionary.MergedDictionaries>
+                <muxc:XamlControlsResources />
+            </ResourceDictionary.MergedDictionaries>
+
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Default">
                     <SolidColorBrush x:Key="NexaWindowBrush" Color="#FFF6F8FA" />
