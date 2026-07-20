@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -232,22 +231,27 @@ public sealed partial class MainWindow : Window
 
     private void SelectNavigationButton(string selectedTag)
     {
-        Brush selectedBrush;
+        Brush? selectedBrush = null;
         try
         {
-            selectedBrush = (Brush)Application.Current.Resources["NexaNavSelectedBrush"];
+            selectedBrush = Application.Current.Resources["NexaNavSelectedBrush"] as Brush;
         }
         catch
         {
-            selectedBrush = new SolidColorBrush(ColorHelper.FromArgb(0x18, 0x00, 0x67, 0xC0));
         }
 
         foreach (Button button in _navigationButtons)
         {
             bool selected = string.Equals(button.Tag as string, selectedTag, StringComparison.Ordinal);
-            button.Background = selected
-                ? selectedBrush
-                : new SolidColorBrush(Colors.Transparent);
+            if (selected && selectedBrush is not null)
+            {
+                button.Background = selectedBrush;
+            }
+            else
+            {
+                button.ClearValue(Control.BackgroundProperty);
+            }
+
             button.Opacity = selected ? 1.0 : 0.78;
         }
     }
