@@ -4,26 +4,52 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-            </ResourceDictionary.MergedDictionaries>
+            <!--
+              Keep portable builds independent from framework package resource URIs.
+              Do not merge XamlControlsResources here: in a clean unpackaged runtime
+              it attempts to resolve Microsoft.UI.Xaml/Themes/themeresources.xaml
+              through ms-appx and prevents the first window from being created.
+            -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="NexaWindowBrush" Color="#FFF6F8FA" />
+                    <SolidColorBrush x:Key="NexaSidebarBrush" Color="#F2FFFFFF" />
                     <SolidColorBrush x:Key="NexaCardBrush" Color="#F7FFFFFF" />
                     <SolidColorBrush x:Key="NexaSubtleBrush" Color="#11000000" />
+                    <SolidColorBrush x:Key="NexaNavSelectedBrush" Color="#180067C0" />
+                    <SolidColorBrush x:Key="NexaAccentBrush" Color="#FF0067C0" />
+                    <SolidColorBrush x:Key="NexaAccentForegroundBrush" Color="#FFFFFFFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="NexaWindowBrush" Color="#FF202020" />
+                    <SolidColorBrush x:Key="NexaSidebarBrush" Color="#EE181818" />
                     <SolidColorBrush x:Key="NexaCardBrush" Color="#D81F1F1F" />
                     <SolidColorBrush x:Key="NexaSubtleBrush" Color="#18FFFFFF" />
+                    <SolidColorBrush x:Key="NexaNavSelectedBrush" Color="#2860CDFF" />
+                    <SolidColorBrush x:Key="NexaAccentBrush" Color="#FF60CDFF" />
+                    <SolidColorBrush x:Key="NexaAccentForegroundBrush" Color="#FF102028" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
-            <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+
+            <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource NexaAccentBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource NexaAccentForegroundBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="Padding" Value="16,8" />
             </Style>
             <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource NexaSubtleBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="Padding" Value="14,7" />
+            </Style>
+            <Style x:Key="NavigationButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="12,10" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
