@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -14,6 +15,7 @@ public sealed partial class MainWindow : Window
     private GlobalHotkeyService? _hotkeyService;
     private TrayIconService? _trayIconService;
     private CommandPaletteWindow? _paletteWindow;
+    private Button[] _navigationButtons = [];
     private bool _allowClose;
     private bool _startupCompleted;
     private bool _shellIntegrationsInitialized;
@@ -21,6 +23,15 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        _navigationButtons =
+        [
+            HomeNavigationButton,
+            ActionsNavigationButton,
+            WorkflowsNavigationButton,
+            HistoryNavigationButton,
+            SettingsNavigationButton
+        ];
 
         Title = "NexaDesk";
         TryConfigureTitleBarAndBackdrop();
@@ -39,9 +50,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeShellIntegrations();
 
-        RootNavigation.IsEnabled = true;
+        NavigationShell.IsEnabled = true;
         StartupOverlay.Visibility = Visibility.Collapsed;
-        RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
+        SelectNavigationButton("home");
         Navigate("home");
         _startupCompleted = true;
     }
@@ -49,7 +60,7 @@ public sealed partial class MainWindow : Window
     public void ShowStartupFailure(Exception exception)
     {
         _startupCompleted = false;
-        RootNavigation.IsEnabled = false;
+        NavigationShell.IsEnabled = false;
         StartupOverlay.Visibility = Visibility.Visible;
         StartupProgress.IsActive = false;
         StartupProgress.Visibility = Visibility.Collapsed;
@@ -208,13 +219,36 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnNavigationSelectionChanged(
-        NavigationView sender,
-        NavigationViewSelectionChangedEventArgs args)
+    private void OnNavigationButtonClicked(object sender, RoutedEventArgs e)
     {
-        if (_startupCompleted && args.SelectedItemContainer?.Tag is string tag)
+        if (!_startupCompleted || sender is not Button { Tag: string tag })
         {
-            Navigate(tag);
+            return;
+        }
+
+        SelectNavigationButton(tag);
+        Navigate(tag);
+    }
+
+    private void SelectNavigationButton(string selectedTag)
+    {
+        Brush selectedBrush;
+        try
+        {
+            selectedBrush = (Brush)Application.Current.Resources["NexaNavSelectedBrush"];
+        }
+        catch
+        {
+            selectedBrush = new SolidColorBrush(ColorHelper.FromArgb(0x18, 0x00, 0x67, 0xC0));
+        }
+
+        foreach (Button button in _navigationButtons)
+        {
+            bool selected = string.Equals(button.Tag as string, selectedTag, StringComparison.Ordinal);
+            button.Background = selected
+                ? selectedBrush
+                : new SolidColorBrush(Colors.Transparent);
+            button.Opacity = selected ? 1.0 : 0.78;
         }
     }
 
