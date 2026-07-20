@@ -55,13 +55,21 @@ jobs:
         run: dotnet restore .\NexaDesk.sln -p:Platform=x64
 
       - name: Build native application
-        run: >
-          msbuild .\NexaDesk.sln
-          /m
-          /p:Configuration=Release
-          /p:Platform=x64
-          /p:AppxPackageSigningEnabled=false
-          /bl:artifacts\ci.binlog
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .\artifacts -Force | Out-Null
+          & msbuild .\NexaDesk.sln `
+            /m `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:AppxPackageSigningEnabled=false `
+            /v:minimal `
+            /bl:artifacts\ci.binlog 2>&1 |
+            Tee-Object -FilePath .\artifacts\build.log
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            throw "Native build failed with exit code $exitCode."
+          }
 
       - name: Publish framework-dependent portable build
         shell: pwsh
@@ -181,6 +189,7 @@ jobs:
             artifacts/portable-framework/**
             artifacts/portable-selfcontained/**
             artifacts/ci.binlog
+            artifacts/build.log
             artifacts/diagnostics/**
           if-no-files-found: warn
           retention-days: 7
