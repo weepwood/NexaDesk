@@ -4,6 +4,8 @@ namespace NexaDesk;
 
 public partial class App : Application
 {
+    private static bool _startupCompleted;
+
     public static AppServices Services { get; } = new();
     public static MainWindow? MainWindow { get; private set; }
 
@@ -11,19 +13,44 @@ public partial class App : Application
     {
         InitializeComponent();
         UnhandledException += OnUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
     }
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _ = LaunchAsync();
-    }
+        AppPaths.EnsureCreated();
+        LogDiagnostic("NexaDesk startup started.");
 
-    private static async Task LaunchAsync()
-    {
-        await Services.InitializeAsync();
-        MainWindow = new MainWindow();
-        ApplyTheme(Services.Settings.GetCached("theme", "System"));
-        MainWindow.Activate();
+        try
+        {
+            MainWindow = new MainWindow();
+            MainWindow.Activate();
+            MainWindow.EnsureVisible();
+        }
+        catch (Exception exception)
+        {
+            LogDiagnostic("Main window creation failed.", exception);
+            ShowFatalStartupError(exception);
+            Exit();
+            return;
+        }
+
+        try
+        {
+            MainWindow.SetStartupStatus("正在初始化本地数据库和设置…");
+            await Services.InitializeAsync();
+
+            ApplyTheme(Services.Settings.GetCached("theme", "System"));
+            MainWindow.CompleteStartup();
+            _startupCompleted = true;
+            LogDiagnostic("NexaDesk startup completed.");
+        }
+        catch (Exception exception)
+        {
+            LogDiagnostic("Application service initialization failed.", exception);
+            MainWindow.ShowStartupFailure(exception);
+        }
     }
 
     public static void ApplyTheme(string theme)
@@ -41,19 +68,63 @@ public partial class App : Application
         };
     }
 
-    private static void OnUnhandledException(
-        object sender,
-        Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    internal static void LogDiagnostic(string message, Exception? exception = null)
     {
         try
         {
             AppPaths.EnsureCreated();
+            string details = exception is null ? string.Empty : $"{Environment.NewLine}{exception}";
             File.AppendAllText(
                 AppPaths.LogPath,
-                $"[{DateTimeOffset.Now:O}] {e.Exception}\r\n");
+                $"[{DateTimeOffset.Now:O}] {message}{details}{Environment.NewLine}");
         }
         catch
         {
         }
+    }
+
+    private static void ShowFatalStartupError(Exception exception)
+    {
+        string message =
+            "NexaDesk 无法创建主窗口。\n\n" +
+            exception.Message +
+            "\n\n诊断日志：\n" +
+            AppPaths.LogPath;
+
+        NativeMethods.MessageBox(
+            0,
+            message,
+            "NexaDesk 启动失败",
+            NativeMethods.MbOk | NativeMethods.MbIconError);
+    }
+
+    private static void OnUnhandledException(
+        object sender,
+        Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        LogDiagnostic("Unhandled XAML exception.", e.Exception);
+
+        if (!_startupCompleted && MainWindow is not null)
+        {
+            e.Handled = true;
+            MainWindow.ShowStartupFailure(e.Exception);
+        }
+    }
+
+    private static void OnDomainUnhandledException(
+        object? sender,
+        System.UnhandledExceptionEventArgs e)
+    {
+        LogDiagnostic(
+            "Unhandled AppDomain exception.",
+            e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString()));
+    }
+
+    private static void OnUnobservedTaskException(
+        object? sender,
+        UnobservedTaskExceptionEventArgs e)
+    {
+        LogDiagnostic("Unobserved task exception.", e.Exception);
+        e.SetObserved();
     }
 }
