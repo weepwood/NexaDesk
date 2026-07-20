@@ -1,0 +1,7 @@
+NexaDesk v0.1.2 release trigger.
+
+Validated startup sequence:
+- WinUI control resources loaded
+- main window object created
+- native window visible
+- local services initialized
