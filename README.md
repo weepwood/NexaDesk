@@ -6,17 +6,17 @@ execute it without opening multiple menus.
 
 ## Download
 
-For a normal portable installation, download the **self-contained** package:
+For a normal Windows installation, download:
 
 ```text
-NexaDesk-portable-x64-selfcontained.zip
+NexaDesk-windows-x64.zip
 ```
 
-It includes the required .NET and Windows App SDK runtime files. Extract the
-entire archive before running `NexaDesk.exe`; do not run the executable from
-inside the ZIP preview.
+Extract the entire archive into a normal folder, and then run `NexaDesk.exe`.
+Do not run it directly from the ZIP preview.
 
-The `NexaDesk-portable-x64-framework.zip` package is intended for machines that
+The package includes the required .NET and Windows App SDK runtime files. The
+`NexaDesk-portable-x64-framework.zip` package is intended only for machines that
 already have the matching .NET and Windows App Runtime installed.
 
 ## Implemented
@@ -41,18 +41,19 @@ No application data is sent to a backend. Runtime data is stored under:
 
 ## Startup troubleshooting
 
-NexaDesk 0.1.1 and later display a startup page before local services are
-initialized. Optional integrations such as Mica, the tray icon, and the global
-hotkey cannot prevent the main window from opening.
+NexaDesk 0.1.2 fixes a missing WinUI control-resource dictionary that prevented
+the main window from being created. It also uses a unified unpackaged,
+self-contained startup configuration.
 
 If startup still fails, inspect:
 
 ```text
+%LocalAppData%\NexaDesk\logs\bootstrap.log
 %LocalAppData%\NexaDesk\logs\nexadesk.log
 ```
 
-The log records the window creation, activation, positioning, local database,
-and shell-integration stages.
+If a visible window is not detected within 12 seconds, NexaDesk displays a
+native Windows error dialog with the log locations.
 
 ## Technology
 
@@ -81,8 +82,8 @@ Open `NexaDesk.sln` for normal development.
 
 ## Release and automatic updates
 
-The release workflow builds a signed self-contained MSIX, two portable
-variants, an App Installer manifest, and SHA-256 checksums.
+The release workflow builds a signed self-contained MSIX when signing secrets
+are configured, plus portable Windows packages and SHA-256 checksums.
 
 Users who install `NexaDesk.appinstaller` are associated with its update
 source. Windows checks for updates when the app starts and through a background
