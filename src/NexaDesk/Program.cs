@@ -18,6 +18,12 @@ internal static class Program
 
         try
         {
+            // This call is part of the WinUI-generated C# entry point. It must
+            // run before Application.Start so the XAML runtime registers its
+            // theme resources and validates the process configuration.
+            XamlCheckProcessRequirements();
+            BootstrapLog("WinUI XAML process requirements initialized.");
+
             WinRT.ComWrappersSupport.InitializeComWrappers();
             BootstrapLog("COM wrappers initialized.");
 
@@ -114,6 +120,9 @@ internal static class Program
             "NexaDesk 启动失败",
             MbOk | MbIconError);
     }
+
+    [DllImport("Microsoft.ui.xaml.dll", ExactSpelling = true)]
+    private static extern void XamlCheckProcessRequirements();
 
     [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
     private static extern int MessageBox(nint windowHandle, string text, string caption, uint type);
