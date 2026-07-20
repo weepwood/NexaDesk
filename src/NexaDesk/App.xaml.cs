@@ -14,7 +14,9 @@ public partial class App : Application
 
     public App()
     {
+        Program.BootstrapLog("App constructor entered.");
         InitializeComponent();
+        Program.BootstrapLog("App XAML resources initialized.");
         UnhandledException += OnUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
@@ -24,6 +26,7 @@ public partial class App : Application
     {
         AppPaths.EnsureCreated();
         TryDeleteStartupProbe();
+        Program.BootstrapLog("App.OnLaunched entered.");
         LogDiagnostic("NexaDesk startup started.");
 
         try
@@ -46,9 +49,11 @@ public partial class App : Application
             }
 
             LogDiagnostic($"Main window activation probe: visible={visible}.");
+            Program.BootstrapLog($"Main window activation probe completed: visible={visible}.");
         }
         catch (Exception exception)
         {
+            Program.BootstrapLog("Main window creation failed.", exception);
             LogDiagnostic("Main window creation failed.", exception);
             ShowFatalStartupError(exception);
             Exit();
@@ -67,9 +72,11 @@ public partial class App : Application
             MainWindow.WriteStartupProbe();
             _startupCompleted = true;
             LogDiagnostic("NexaDesk startup completed.");
+            Program.BootstrapLog("NexaDesk startup completed.");
         }
         catch (Exception exception)
         {
+            Program.BootstrapLog("Application service initialization failed.", exception);
             LogDiagnostic("Application service initialization failed.", exception);
             MainWindow.ShowStartupFailure(exception);
             MainWindow.WriteStartupProbe();
@@ -133,6 +140,7 @@ public partial class App : Application
         object sender,
         Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
+        Program.BootstrapLog("Unhandled XAML exception.", e.Exception);
         LogDiagnostic("Unhandled XAML exception.", e.Exception);
 
         if (!_startupCompleted && MainWindow is not null)
@@ -147,15 +155,16 @@ public partial class App : Application
         object? sender,
         System.UnhandledExceptionEventArgs e)
     {
-        LogDiagnostic(
-            "Unhandled AppDomain exception.",
-            e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString()));
+        Exception exception = e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString());
+        Program.BootstrapLog("Unhandled AppDomain exception.", exception);
+        LogDiagnostic("Unhandled AppDomain exception.", exception);
     }
 
     private static void OnUnobservedTaskException(
         object? sender,
         UnobservedTaskExceptionEventArgs e)
     {
+        Program.BootstrapLog("Unobserved task exception.", e.Exception);
         LogDiagnostic("Unobserved task exception.", e.Exception);
         e.SetObserved();
     }
