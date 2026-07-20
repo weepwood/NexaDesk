@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -81,6 +82,31 @@ public sealed partial class MainWindow : Window
         catch (Exception exception)
         {
             App.LogDiagnostic("Unable to position the main window.", exception);
+        }
+    }
+
+    public bool WriteStartupProbe()
+    {
+        try
+        {
+            nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            bool visible = hwnd != 0 && IsWindowVisible(hwnd);
+
+            AppPaths.EnsureCreated();
+            File.WriteAllLines(
+                AppPaths.StartupProbePath,
+                [
+                    $"hwnd={hwnd}",
+                    $"visible={visible.ToString().ToLowerInvariant()}",
+                    $"timestamp={DateTimeOffset.UtcNow:O}"
+                ]);
+
+            return visible;
+        }
+        catch (Exception exception)
+        {
+            App.LogDiagnostic("Unable to write the startup visibility probe.", exception);
+            return false;
         }
     }
 
@@ -245,4 +271,8 @@ public sealed partial class MainWindow : Window
         App.Services.Dispose();
         App.Current.Exit();
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(nint hwnd);
 }
