@@ -40,7 +40,6 @@ jobs:
           /m
           /p:Configuration=Release
           /p:Platform=x64
-          /p:WindowsPackageType=None
           /p:AppxPackageSigningEnabled=false
           /bl:artifacts\ci.binlog
 
@@ -54,7 +53,10 @@ jobs:
             -p:Platform=x64 `
             -p:WindowsPackageType=None `
             -p:WindowsAppSDKSelfContained=false `
-            -p:PublishReadyToRun=true `
+            -p:WindowsAppSdkBootstrapInitialize=true `
+            -p:WindowsAppSdkUndockedRegFreeWinRTInitialize=false `
+            -p:PublishTrimmed=false `
+            -p:PublishReadyToRun=false `
             -o .\artifacts\portable-framework
 
       - name: Publish self-contained portable build
@@ -67,19 +69,46 @@ jobs:
             -p:Platform=x64 `
             -p:WindowsPackageType=None `
             -p:WindowsAppSDKSelfContained=true `
-            -p:PublishReadyToRun=true `
+            -p:WindowsAppSdkBootstrapInitialize=false `
+            -p:WindowsAppSdkUndockedRegFreeWinRTInitialize=true `
+            -p:PublishTrimmed=false `
+            -p:PublishReadyToRun=false `
             -o .\artifacts\portable-selfcontained
+
+      - name: Verify portable output composition
+        shell: pwsh
+        run: |
+          $selfContained = Resolve-Path .\artifacts\portable-selfcontained
+          $required = @(
+            "NexaDesk.exe",
+            "NexaDesk.dll",
+            "NexaDesk.pri",
+            "Microsoft.WinUI.dll",
+            "WinRT.Runtime.dll"
+          )
+          foreach ($name in $required) {
+            $path = Join-Path $selfContained $name
+            if (-not (Test-Path $path)) {
+              throw "Self-contained output is missing $name"
+            }
+          }
+
+          $runtimeDlls = Get-ChildItem $selfContained -Filter "Microsoft.WindowsAppRuntime*.dll" -File
+          if (-not $runtimeDlls) {
+            throw "Self-contained output is missing Windows App SDK runtime DLLs."
+          }
 
       - name: Collect hosted-runner startup diagnostics
         continue-on-error: true
         shell: pwsh
         run: |
           # GitHub-hosted runners do not provide a normal interactive desktop.
-          # This step detects immediate crashes and collects stage logs, but a
-          # real visibility assertion must run on an interactive Windows machine.
+          # This step detects immediate crashes and collects stage logs. Real
+          # visibility is verified by the app's own watchdog on desktop Windows.
           $root = Join-Path $env:LOCALAPPDATA "NexaDesk"
           $probe = Join-Path $root "startup-probe.txt"
           $log = Join-Path $root "logs\nexadesk.log"
+          $bootstrapLog = Join-Path $root "logs\bootstrap.log"
           $diagnostics = Join-Path (Resolve-Path .\artifacts) "diagnostics"
 
           Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -98,17 +127,16 @@ jobs:
 
             if (Test-Path $probe) {
               Copy-Item $probe (Join-Path $diagnostics "startup-probe.txt") -Force
-              Write-Host "---- NexaDesk startup probe ----"
               Get-Content $probe
-            } else {
-              Write-Warning "No visibility probe was produced in the non-interactive runner session."
             }
           }
           finally {
-            if (Test-Path $log) {
-              Copy-Item $log (Join-Path $diagnostics "nexadesk.log") -Force
-              Write-Host "---- NexaDesk startup log ----"
-              Get-Content $log
+            foreach ($source in @($bootstrapLog, $log)) {
+              if (Test-Path $source) {
+                Copy-Item $source $diagnostics -Force
+                Write-Host "---- $source ----"
+                Get-Content $source
+              }
             }
 
             if (-not $process.HasExited) {
@@ -123,6 +151,7 @@ jobs:
           name: NexaDesk-ci-x64
           path: |
             artifacts/portable-framework/**
+            artifacts/portable-selfcontained/**
             artifacts/ci.binlog
             artifacts/diagnostics/**
           if-no-files-found: warn
