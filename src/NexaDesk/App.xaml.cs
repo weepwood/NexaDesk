@@ -28,9 +28,15 @@ public partial class App : Application
 
         try
         {
+            LogDiagnostic("Creating the main window.");
             MainWindow = new MainWindow();
+            LogDiagnostic("Main window object created.");
+
             MainWindow.Activate();
+            LogDiagnostic("Main window activation requested.");
+
             MainWindow.EnsureVisible();
+            LogDiagnostic("Main window positioning requested.");
 
             bool visible = false;
             for (int attempt = 0; attempt < 20 && !visible; attempt++)
@@ -52,7 +58,9 @@ public partial class App : Application
         try
         {
             MainWindow.SetStartupStatus("正在初始化本地数据库和设置…");
+            LogDiagnostic("Initializing local application services.");
             await Services.InitializeAsync();
+            LogDiagnostic("Local application services initialized.");
 
             ApplyTheme(Services.Settings.GetCached("theme", "System"));
             MainWindow.CompleteStartup();
