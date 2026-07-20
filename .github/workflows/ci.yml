@@ -31,24 +31,35 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Verify portable XAML resource independence
+      - name: Verify WinUI XAML startup contract
         shell: pwsh
         run: |
+          $sourceFiles = Get-ChildItem .\src\NexaDesk -Recurse -File |
+            Where-Object Extension -In '.xaml', '.cs'
           $forbidden = @(
-            '<XamlControlsResources',
             '<NavigationView',
             '<TabView',
             'ms-appx:///Microsoft.UI.Xaml/Themes/'
           )
-          $sourceFiles = Get-ChildItem .\src\NexaDesk -Recurse -File |
-            Where-Object Extension -In '.xaml', '.cs'
-
           foreach ($pattern in $forbidden) {
             $matches = $sourceFiles | Select-String -SimpleMatch $pattern
             if ($matches) {
               $matches | ForEach-Object { Write-Error "$($_.Path):$($_.LineNumber): $($_.Line)" }
-              throw "Portable UI contains forbidden external WinUI resource dependency: $pattern"
+              throw "Portable UI contains a forbidden WinUI dependency: $pattern"
             }
+          }
+
+          $appXaml = Get-Content .\src\NexaDesk\App.xaml -Raw
+          if ($appXaml -notmatch '<muxc:XamlControlsResources\s*/>') {
+            throw "App.xaml must load XamlControlsResources for WinUI control templates."
+          }
+
+          $program = Get-Content .\src\NexaDesk\Program.cs -Raw
+          if ($program -notmatch 'XamlCheckProcessRequirements\(\);') {
+            throw "Custom Program.Main must call XamlCheckProcessRequirements before Application.Start."
+          }
+          if ($program.IndexOf('XamlCheckProcessRequirements();') -gt $program.IndexOf('Application.Start(')) {
+            throw "XamlCheckProcessRequirements must execute before Application.Start."
           }
 
       - name: Restore
@@ -114,6 +125,9 @@ jobs:
             "Microsoft.WinUI.dll",
             "Microsoft.UI.pri",
             "Microsoft.UI.Xaml.Controls.pri",
+            "Microsoft.ui.xaml.dll",
+            "Microsoft.ui.xaml.resources.common.dll",
+            "Microsoft.ui.xaml.resources.19h1.dll",
             "WinRT.Runtime.dll"
           )
           foreach ($name in $required) {
@@ -166,7 +180,7 @@ jobs:
                 $text = Get-Content $source -Raw
                 Write-Host "---- $source ----"
                 Write-Host $text
-                if ($text -match 'XamlParseException|Cannot locate resource') {
+                if ($text -match 'XamlParseException|Cannot locate resource|Cannot find a Resource') {
                   throw "NexaDesk startup log contains a XAML resource failure."
                 }
               }
