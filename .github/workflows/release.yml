@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version without v prefix, for example 0.1.0
+        description: Version without v prefix, for example 0.1.2
         required: true
         type: string
 
@@ -66,11 +66,6 @@ jobs:
                        -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD) -and
                        -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PUBLISHER)
           "available=$($available.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          if ($available) {
-            "Windows signing secrets detected. The signed MSIX and App Installer will be produced." >> $env:GITHUB_STEP_SUMMARY
-          } else {
-            "Windows signing secrets are not configured. Portable packages will be published; signed MSIX/App Installer assets are skipped." >> $env:GITHUB_STEP_SUMMARY
-          }
 
       - name: Restore
         run: dotnet restore .\NexaDesk.sln -p:Platform=x64
@@ -95,7 +90,10 @@ jobs:
             -p:Version="${{ steps.version.outputs.semver }}" `
             -p:WindowsPackageType=None `
             -p:WindowsAppSDKSelfContained=false `
-            -p:PublishReadyToRun=true `
+            -p:WindowsAppSdkBootstrapInitialize=true `
+            -p:WindowsAppSdkUndockedRegFreeWinRTInitialize=false `
+            -p:PublishTrimmed=false `
+            -p:PublishReadyToRun=false `
             -o .\artifacts\portable-framework
           Compress-Archive -Path .\artifacts\portable-framework\* `
             -DestinationPath .\artifacts\NexaDesk-portable-x64-framework.zip -Force
@@ -109,10 +107,28 @@ jobs:
             -p:Version="${{ steps.version.outputs.semver }}" `
             -p:WindowsPackageType=None `
             -p:WindowsAppSDKSelfContained=true `
-            -p:PublishReadyToRun=true `
+            -p:WindowsAppSdkBootstrapInitialize=false `
+            -p:WindowsAppSdkUndockedRegFreeWinRTInitialize=true `
+            -p:PublishTrimmed=false `
+            -p:PublishReadyToRun=false `
             -o .\artifacts\portable-selfcontained
           Compress-Archive -Path .\artifacts\portable-selfcontained\* `
-            -DestinationPath .\artifacts\NexaDesk-portable-x64-selfcontained.zip -Force
+            -DestinationPath .\artifacts\NexaDesk-windows-x64.zip -Force
+          Copy-Item .\artifacts\NexaDesk-windows-x64.zip `
+            .\artifacts\NexaDesk-portable-x64-selfcontained.zip -Force
+
+      - name: Verify self-contained package
+        shell: pwsh
+        run: |
+          $dir = Resolve-Path .\artifacts\portable-selfcontained
+          foreach ($name in @("NexaDesk.exe", "NexaDesk.dll", "NexaDesk.pri", "Microsoft.WinUI.dll", "WinRT.Runtime.dll")) {
+            if (-not (Test-Path (Join-Path $dir $name))) {
+              throw "Self-contained package is missing $name"
+            }
+          }
+          if (-not (Get-ChildItem $dir -Filter "Microsoft.WindowsAppRuntime*.dll" -File)) {
+            throw "Self-contained package is missing Windows App SDK runtime DLLs."
+          }
 
       - name: Build signed self-contained MSIX
         if: steps.signing.outputs.available == 'true'
@@ -126,8 +142,11 @@ jobs:
             /p:Platform=x64 `
             /p:RuntimeIdentifier=win-x64 `
             /p:Version="${{ steps.version.outputs.semver }}" `
-            /p:AppxPackageVersion="${{ steps.version.outputs.package }}" `
+            /p:AppxPackage=true `
+            /p:WindowsPackageType=MSIX `
             /p:WindowsAppSDKSelfContained=true `
+            /p:WindowsAppSdkBootstrapInitialize=false `
+            /p:WindowsAppSdkUndockedRegFreeWinRTInitialize=false `
             /p:GenerateAppxPackageOnBuild=true `
             /p:AppxBundle=Never `
             /p:UapAppxPackageBuildMode=SideloadOnly `
@@ -136,7 +155,6 @@ jobs:
             /p:PackageCertificatePassword="$env:WINDOWS_CERTIFICATE_PASSWORD" `
             /p:AppxPackageDir="$packageDir"
           if ($LASTEXITCODE -ne 0) { throw "MSIX build failed." }
-
           $msix = Get-ChildItem .\artifacts\msix-output -Recurse -File |
             Where-Object Extension -eq ".msix" |
             Sort-Object LastWriteTimeUtc -Descending |
@@ -170,22 +188,14 @@ jobs:
       - name: Create release notes
         shell: pwsh
         run: |
-          $signed = "${{ steps.signing.outputs.available }}" -eq "true"
           $lines = @(
-            "NexaDesk ${{ steps.version.outputs.semver }} is the first native Windows release.",
+            "NexaDesk ${{ steps.version.outputs.semver }} fixes the portable WinUI startup pipeline.",
             "",
-            "Included assets:",
-            "- Framework-dependent portable x64 build",
-            "- Self-contained portable x64 build",
-            "- SHA-256 checksums"
+            "Recommended download:",
+            "- NexaDesk-windows-x64.zip",
+            "",
+            "This build uses a unified unpackaged self-contained configuration, an explicit WinUI entry point, early bootstrap logging, and a startup watchdog."
           )
-          if ($signed) {
-            $lines += "- Signed self-contained MSIX installer"
-            $lines += "- App Installer automatic-update manifest"
-          } else {
-            $lines += ""
-            $lines += "> Signed MSIX and App Installer assets were not generated because repository signing secrets are not configured."
-          }
           [IO.File]::WriteAllLines(
             (Join-Path (Resolve-Path .\artifacts) "RELEASE_NOTES.md"),
             $lines,
@@ -198,9 +208,7 @@ jobs:
           $assets = Get-ChildItem .\artifacts -File |
             Where-Object { $_.Name -match '^NexaDesk.*\.(msix|appinstaller|zip)$' -or $_.Name -eq 'SHA256SUMS.txt' } |
             ForEach-Object FullName
-          if (-not $assets -or $assets.Count -eq 0) {
-            throw "No release assets were produced."
-          }
+          if (-not $assets -or $assets.Count -eq 0) { throw "No release assets were produced." }
 
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
