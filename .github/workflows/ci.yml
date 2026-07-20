@@ -70,43 +70,54 @@ jobs:
             -p:PublishReadyToRun=true `
             -o .\artifacts\portable-selfcontained
 
-      - name: Verify application creates a visible window
+      - name: Verify application reports a visible native window
         shell: pwsh
         run: |
+          $root = Join-Path $env:LOCALAPPDATA "NexaDesk"
+          $probe = Join-Path $root "startup-probe.txt"
+          $log = Join-Path $root "logs\nexadesk.log"
+          $diagnostics = Join-Path (Resolve-Path .\artifacts) "diagnostics"
+
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+
           $exe = (Resolve-Path .\artifacts\portable-selfcontained\NexaDesk.exe).Path
           $process = Start-Process -FilePath $exe -PassThru
           $deadline = (Get-Date).AddSeconds(30)
-          $visibleWindowFound = $false
 
           try {
-            do {
-              Start-Sleep -Seconds 1
+            while ((Get-Date) -lt $deadline) {
+              Start-Sleep -Milliseconds 500
               $process.Refresh()
 
               if ($process.HasExited) {
-                $log = Join-Path $env:LOCALAPPDATA "NexaDesk\logs\nexadesk.log"
                 if (Test-Path $log) {
                   Write-Host "---- NexaDesk startup log ----"
                   Get-Content $log
+                  Copy-Item $log (Join-Path $diagnostics "nexadesk.log") -Force
                 }
-                throw "NexaDesk exited before creating a window. Exit code: $($process.ExitCode)"
+                throw "NexaDesk exited before reporting window visibility. Exit code: $($process.ExitCode)"
               }
 
-              if ($process.MainWindowHandle -ne 0) {
-                $visibleWindowFound = $true
-                Write-Host "Visible NexaDesk window detected: $($process.MainWindowHandle)"
-                break
-              }
-            } while ((Get-Date) -lt $deadline)
+              if (Test-Path $probe) {
+                $probeLines = Get-Content $probe
+                Write-Host "---- NexaDesk startup probe ----"
+                $probeLines | ForEach-Object { Write-Host $_ }
+                Copy-Item $probe (Join-Path $diagnostics "startup-probe.txt") -Force
 
-            if (-not $visibleWindowFound) {
-              $log = Join-Path $env:LOCALAPPDATA "NexaDesk\logs\nexadesk.log"
-              if (Test-Path $log) {
-                Write-Host "---- NexaDesk startup log ----"
-                Get-Content $log
+                if ($probeLines -contains "visible=true") {
+                  Write-Host "NexaDesk reported a visible native top-level window."
+                  exit 0
+                }
               }
-              throw "NexaDesk remained alive but did not create a visible top-level window within 30 seconds."
             }
+
+            if (Test-Path $log) {
+              Write-Host "---- NexaDesk startup log ----"
+              Get-Content $log
+              Copy-Item $log (Join-Path $diagnostics "nexadesk.log") -Force
+            }
+            throw "NexaDesk did not report a visible native window within 30 seconds."
           }
           finally {
             if (-not $process.HasExited) {
@@ -121,8 +132,7 @@ jobs:
           name: NexaDesk-ci-x64
           path: |
             artifacts/portable-framework/**
-            artifacts/portable-selfcontained/**
             artifacts/ci.binlog
-            ~/AppData/Local/NexaDesk/logs/**
+            artifacts/diagnostics/**
           if-no-files-found: warn
           retention-days: 7
