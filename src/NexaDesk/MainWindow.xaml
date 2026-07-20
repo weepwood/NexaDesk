@@ -22,7 +22,7 @@
             </StackPanel>
         </Grid>
 
-        <Grid x:Name="NavigationShell" Grid.Row="1" IsEnabled="False">
+        <Grid x:Name="NavigationShell" Grid.Row="1" IsHitTestVisible="False">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="*" />
