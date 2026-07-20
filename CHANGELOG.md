@@ -2,18 +2,25 @@
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-07-20
+## [0.1.2]
 
 ### Fixed
 
-- Show the main window before local services finish initializing.
-- Display an in-app startup failure page instead of silently leaving a background process.
-- Fall back when Mica, the tray icon, or the global hotkey is unavailable.
-- Reposition the initial window into the visible display work area.
-- Log startup, AppDomain, XAML, and unobserved task exceptions.
-- Add a Windows CI smoke test that verifies a visible top-level window is created.
+- Added the required WinUI `XamlControlsResources` dictionary. The missing dictionary caused `MainWindow.InitializeComponent()` to fail with `XamlParseException` because the `TabViewButtonBackground` resource could not be resolved.
+- Unified portable deployment as unpackaged and Windows App SDK self-contained at the project level.
+- Added an explicit WinUI entry point, bootstrap logging, and a startup watchdog.
+- Disabled trimming and ReadyToRun for the portable release path to prioritize startup reliability.
 
-## [0.1.0] - 2026-07-19
+## [0.1.1]
+
+### Fixed
+
+- Show the main window before local services are initialized.
+- Surface startup failures in the UI instead of leaving an inaccessible process.
+- Treat Mica, tray icon, and global hotkey integration as optional capabilities.
+- Reposition the initial window into the primary display work area.
+- Add startup-stage diagnostics and portable launch smoke coverage.
+- Exit normally when close-to-tray is unavailable.
 
 ### Added
 
