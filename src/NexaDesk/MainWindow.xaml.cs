@@ -49,7 +49,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeShellIntegrations();
 
-        NavigationShell.IsEnabled = true;
+        NavigationShell.IsHitTestVisible = true;
         StartupOverlay.Visibility = Visibility.Collapsed;
         SelectNavigationButton("home");
         Navigate("home");
@@ -59,7 +59,7 @@ public sealed partial class MainWindow : Window
     public void ShowStartupFailure(Exception exception)
     {
         _startupCompleted = false;
-        NavigationShell.IsEnabled = false;
+        NavigationShell.IsHitTestVisible = false;
         StartupOverlay.Visibility = Visibility.Visible;
         StartupProgress.IsActive = false;
         StartupProgress.Visibility = Visibility.Collapsed;
