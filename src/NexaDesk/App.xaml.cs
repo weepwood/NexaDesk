@@ -1,9 +1,12 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 
 namespace NexaDesk;
 
 public partial class App : Application
 {
+    private const uint MbOk = 0x00000000;
+    private const uint MbIconError = 0x00000010;
     private static bool _startupCompleted;
 
     public static AppServices Services { get; } = new();
@@ -91,11 +94,7 @@ public partial class App : Application
             "\n\n诊断日志：\n" +
             AppPaths.LogPath;
 
-        NativeMethods.MessageBox(
-            0,
-            message,
-            "NexaDesk 启动失败",
-            NativeMethods.MbOk | NativeMethods.MbIconError);
+        MessageBox(0, message, "NexaDesk 启动失败", MbOk | MbIconError);
     }
 
     private static void OnUnhandledException(
@@ -127,4 +126,11 @@ public partial class App : Application
         LogDiagnostic("Unobserved task exception.", e.Exception);
         e.SetObserved();
     }
+
+    [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
+    private static extern int MessageBox(
+        nint windowHandle,
+        string text,
+        string caption,
+        uint type);
 }
