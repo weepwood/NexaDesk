@@ -23,6 +23,7 @@ public partial class App : Application
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         AppPaths.EnsureCreated();
+        TryDeleteStartupProbe();
         LogDiagnostic("NexaDesk startup started.");
 
         try
@@ -30,6 +31,15 @@ public partial class App : Application
             MainWindow = new MainWindow();
             MainWindow.Activate();
             MainWindow.EnsureVisible();
+
+            bool visible = false;
+            for (int attempt = 0; attempt < 20 && !visible; attempt++)
+            {
+                await Task.Delay(100);
+                visible = MainWindow.WriteStartupProbe();
+            }
+
+            LogDiagnostic($"Main window activation probe: visible={visible}.");
         }
         catch (Exception exception)
         {
@@ -46,6 +56,7 @@ public partial class App : Application
 
             ApplyTheme(Services.Settings.GetCached("theme", "System"));
             MainWindow.CompleteStartup();
+            MainWindow.WriteStartupProbe();
             _startupCompleted = true;
             LogDiagnostic("NexaDesk startup completed.");
         }
@@ -53,6 +64,7 @@ public partial class App : Application
         {
             LogDiagnostic("Application service initialization failed.", exception);
             MainWindow.ShowStartupFailure(exception);
+            MainWindow.WriteStartupProbe();
         }
     }
 
@@ -86,6 +98,18 @@ public partial class App : Application
         }
     }
 
+    private static void TryDeleteStartupProbe()
+    {
+        try
+        {
+            File.Delete(AppPaths.StartupProbePath);
+        }
+        catch (Exception exception)
+        {
+            LogDiagnostic("Unable to clear the previous startup probe.", exception);
+        }
+    }
+
     private static void ShowFatalStartupError(Exception exception)
     {
         string message =
@@ -107,6 +131,7 @@ public partial class App : Application
         {
             e.Handled = true;
             MainWindow.ShowStartupFailure(e.Exception);
+            MainWindow.WriteStartupProbe();
         }
     }
 
