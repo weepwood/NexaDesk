@@ -9,6 +9,7 @@ public static class AppPaths
     public static string DatabasePath { get; } = Path.Combine(DataDirectory, "nexadesk.db");
     public static string LogDirectory { get; } = Path.Combine(RootDirectory, "logs");
     public static string LogPath { get; } = Path.Combine(LogDirectory, "nexadesk.log");
+    public static string StartupProbePath { get; } = Path.Combine(RootDirectory, "startup-probe.txt");
 
     public static void EnsureCreated()
     {

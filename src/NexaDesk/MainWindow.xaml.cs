@@ -1,62 +1,130 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using NexaDesk.Views;
+using Windows.Graphics;
 
 namespace NexaDesk;
 
 public sealed partial class MainWindow : Window
 {
-    private readonly GlobalHotkeyService _hotkeyService;
-    private readonly TrayIconService _trayIconService;
+    private GlobalHotkeyService? _hotkeyService;
+    private TrayIconService? _trayIconService;
     private CommandPaletteWindow? _paletteWindow;
     private bool _allowClose;
+    private bool _startupCompleted;
+    private bool _shellIntegrationsInitialized;
 
     public MainWindow()
     {
         InitializeComponent();
 
         Title = "NexaDesk";
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBar);
-        SystemBackdrop = new MicaBackdrop();
+        TryConfigureTitleBarAndBackdrop();
 
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1180, 760));
+        AppWindow.Resize(new SizeInt32(1180, 760));
         AppWindow.Closing += OnAppWindowClosing;
         Closed += OnClosed;
+    }
 
-        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+    public void SetStartupStatus(string message)
+    {
+        StartupMessage.Text = message;
+    }
 
-        _hotkeyService = new GlobalHotkeyService();
+    public void CompleteStartup()
+    {
+        InitializeShellIntegrations();
+
+        RootNavigation.IsEnabled = true;
+        StartupOverlay.Visibility = Visibility.Collapsed;
+        RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
+        Navigate("home");
+        _startupCompleted = true;
+    }
+
+    public void ShowStartupFailure(Exception exception)
+    {
+        _startupCompleted = false;
+        RootNavigation.IsEnabled = false;
+        StartupOverlay.Visibility = Visibility.Visible;
+        StartupProgress.IsActive = false;
+        StartupProgress.Visibility = Visibility.Collapsed;
+        StartupTitle.Text = "NexaDesk 启动失败";
+        StartupMessage.Text = string.IsNullOrWhiteSpace(exception.Message)
+            ? "本地服务初始化失败。"
+            : exception.Message;
+        StartupDetails.Text = $"诊断日志：{AppPaths.LogPath}";
+        StartupDetails.Visibility = Visibility.Visible;
+        StartupActions.Visibility = Visibility.Visible;
+        ShowMainWindow();
+    }
+
+    public void EnsureVisible()
+    {
         try
         {
-            _hotkeyService.Initialize(hwnd);
-            _hotkeyService.Triggered += (_, _) => ShowCommandPalette();
+            DisplayArea area = DisplayArea.GetFromWindowId(
+                AppWindow.Id,
+                DisplayAreaFallback.Primary);
+
+            RectInt32 work = area.WorkArea;
+            int width = Math.Min(1180, Math.Max(480, work.Width - 48));
+            int height = Math.Min(760, Math.Max(360, work.Height - 48));
+            int x = work.X + Math.Max(0, (work.Width - width) / 2);
+            int y = work.Y + Math.Max(0, (work.Height - height) / 2);
+
+            AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
         }
         catch (Exception exception)
         {
-            LogStartupWarning("Global hotkey registration failed.", exception);
+            App.LogDiagnostic("Unable to position the main window.", exception);
         }
+    }
 
-        _trayIconService = new TrayIconService(DispatcherQueue);
-        _trayIconService.Initialize(hwnd);
-        _trayIconService.ShowRequested += (_, _) => ShowMainWindow();
-        _trayIconService.PaletteRequested += (_, _) => ShowCommandPalette();
-        _trayIconService.ExitRequested += (_, _) => RequestExit();
+    public bool WriteStartupProbe()
+    {
+        try
+        {
+            nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            bool visible = hwnd != 0 && IsWindowVisible(hwnd);
 
-        RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
-        Navigate("home");
+            AppPaths.EnsureCreated();
+            File.WriteAllLines(
+                AppPaths.StartupProbePath,
+                [
+                    $"hwnd={hwnd}",
+                    $"visible={visible.ToString().ToLowerInvariant()}",
+                    $"timestamp={DateTimeOffset.UtcNow:O}"
+                ]);
+
+            return visible;
+        }
+        catch (Exception exception)
+        {
+            App.LogDiagnostic("Unable to write the startup visibility probe.", exception);
+            return false;
+        }
     }
 
     public void ShowMainWindow()
     {
         AppWindow.Show();
         Activate();
+        EnsureVisible();
     }
 
     public void ShowCommandPalette()
     {
+        if (!_startupCompleted)
+        {
+            ShowMainWindow();
+            return;
+        }
+
         App.Services.Windows.CaptureForegroundWindow();
         _paletteWindow ??= new CommandPaletteWindow();
         _paletteWindow.ShowPalette();
@@ -69,11 +137,82 @@ public sealed partial class MainWindow : Window
         Close();
     }
 
+    private void TryConfigureTitleBarAndBackdrop()
+    {
+        try
+        {
+            ExtendsContentIntoTitleBar = true;
+            SetTitleBar(AppTitleBar);
+        }
+        catch (Exception exception)
+        {
+            App.LogDiagnostic("Custom title bar is unavailable.", exception);
+        }
+
+        try
+        {
+            SystemBackdrop = new MicaBackdrop();
+        }
+        catch (Exception exception)
+        {
+            App.LogDiagnostic("Mica backdrop is unavailable; using the default background.", exception);
+        }
+    }
+
+    private void InitializeShellIntegrations()
+    {
+        if (_shellIntegrationsInitialized)
+        {
+            return;
+        }
+
+        _shellIntegrationsInitialized = true;
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+        try
+        {
+            GlobalHotkeyService hotkey = new();
+            hotkey.Initialize(hwnd);
+            hotkey.Triggered += (_, _) => ShowCommandPalette();
+            _hotkeyService = hotkey;
+        }
+        catch (Exception exception)
+        {
+            _hotkeyService?.Dispose();
+            _hotkeyService = null;
+            App.LogDiagnostic("Global hotkey registration failed.", exception);
+        }
+
+        try
+        {
+            TrayIconService tray = new(DispatcherQueue);
+            tray.Initialize(hwnd);
+
+            if (!tray.IsAvailable)
+            {
+                tray.Dispose();
+                App.LogDiagnostic("System tray icon is unavailable.");
+                return;
+            }
+
+            tray.ShowRequested += (_, _) => ShowMainWindow();
+            tray.PaletteRequested += (_, _) => ShowCommandPalette();
+            tray.ExitRequested += (_, _) => RequestExit();
+            _trayIconService = tray;
+        }
+        catch (Exception exception)
+        {
+            _trayIconService?.Dispose();
+            _trayIconService = null;
+            App.LogDiagnostic("System tray initialization failed.", exception);
+        }
+    }
+
     private void OnNavigationSelectionChanged(
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
-        if (args.SelectedItemContainer?.Tag is string tag)
+        if (_startupCompleted && args.SelectedItemContainer?.Tag is string tag)
         {
             Navigate(tag);
         }
@@ -103,28 +242,37 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        if (!_startupCompleted || _trayIconService is null)
+        {
+            _allowClose = true;
+            return;
+        }
+
         args.Cancel = true;
         AppWindow.Hide();
     }
 
-    private static void LogStartupWarning(string message, Exception exception)
+    private void OnOpenLogFolderClicked(object sender, RoutedEventArgs e)
     {
-        try
+        AppPaths.EnsureCreated();
+        Process.Start(new ProcessStartInfo
         {
-            AppPaths.EnsureCreated();
-            File.AppendAllText(
-                AppPaths.LogPath,
-                $"[{DateTimeOffset.Now:O}] {message} {exception}\r\n");
-        }
-        catch
-        {
-        }
+            FileName = AppPaths.LogDirectory,
+            UseShellExecute = true
+        });
     }
+
+    private void OnExitClicked(object sender, RoutedEventArgs e) => RequestExit();
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
-        _hotkeyService.Dispose();
-        _trayIconService.Dispose();
+        _hotkeyService?.Dispose();
+        _trayIconService?.Dispose();
+        App.Services.Dispose();
         App.Current.Exit();
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(nint hwnd);
 }

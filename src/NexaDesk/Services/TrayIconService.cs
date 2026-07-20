@@ -16,6 +16,8 @@ public sealed class TrayIconService : IDisposable
     private NativeMethods.NotifyIconData _data;
     private bool _initialized;
 
+    public bool IsAvailable => _initialized;
+
     public event EventHandler? ShowRequested;
     public event EventHandler? PaletteRequested;
     public event EventHandler? ExitRequested;
@@ -141,16 +143,19 @@ public sealed class TrayIconService : IDisposable
         if (_initialized)
         {
             NativeMethods.Shell_NotifyIcon(NativeMethods.NimDelete, ref _data);
+            _initialized = false;
         }
 
         if (_hwnd != 0)
         {
             NativeMethods.RemoveWindowSubclass(_hwnd, _subclassProc, SubclassId);
+            _hwnd = 0;
         }
 
         if (_icon != 0)
         {
             NativeMethods.DestroyIcon(_icon);
+            _icon = 0;
         }
     }
 }

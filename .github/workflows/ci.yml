@@ -17,7 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -57,12 +57,73 @@ jobs:
             -p:PublishReadyToRun=true `
             -o .\artifacts\portable-framework
 
+      - name: Publish self-contained portable build
+        shell: pwsh
+        run: |
+          dotnet publish .\src\NexaDesk\NexaDesk.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Platform=x64 `
+            -p:WindowsPackageType=None `
+            -p:WindowsAppSDKSelfContained=true `
+            -p:PublishReadyToRun=true `
+            -o .\artifacts\portable-selfcontained
+
+      - name: Collect hosted-runner startup diagnostics
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # GitHub-hosted runners do not provide a normal interactive desktop.
+          # This step detects immediate crashes and collects stage logs, but a
+          # real visibility assertion must run on an interactive Windows machine.
+          $root = Join-Path $env:LOCALAPPDATA "NexaDesk"
+          $probe = Join-Path $root "startup-probe.txt"
+          $log = Join-Path $root "logs\nexadesk.log"
+          $diagnostics = Join-Path (Resolve-Path .\artifacts) "diagnostics"
+
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+
+          $exe = (Resolve-Path .\artifacts\portable-selfcontained\NexaDesk.exe).Path
+          $process = Start-Process -FilePath $exe -PassThru
+
+          try {
+            Start-Sleep -Seconds 8
+            $process.Refresh()
+
+            if ($process.HasExited) {
+              throw "NexaDesk exited during startup. Exit code: $($process.ExitCode)"
+            }
+
+            if (Test-Path $probe) {
+              Copy-Item $probe (Join-Path $diagnostics "startup-probe.txt") -Force
+              Write-Host "---- NexaDesk startup probe ----"
+              Get-Content $probe
+            } else {
+              Write-Warning "No visibility probe was produced in the non-interactive runner session."
+            }
+          }
+          finally {
+            if (Test-Path $log) {
+              Copy-Item $log (Join-Path $diagnostics "nexadesk.log") -Force
+              Write-Host "---- NexaDesk startup log ----"
+              Get-Content $log
+            }
+
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+            }
+          }
+
       - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: NexaDesk-ci-x64
           path: |
             artifacts/portable-framework/**
             artifacts/ci.binlog
-          if-no-files-found: error
+            artifacts/diagnostics/**
+          if-no-files-found: warn
           retention-days: 7
